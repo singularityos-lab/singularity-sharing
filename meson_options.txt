@@ -1,0 +1,2 @@
+option('consent-helper', type: 'string', value: '',
+  description: 'Program that asks the user to confirm incoming Remote Desktop connections; defaults to libexecdir/singularity-portal-consent')

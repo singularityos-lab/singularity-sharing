@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Sharing
+Exec=@libexecdir@/singularity-sharing
+NoDisplay=true
+X-GNOME-Autostart-Phase=Applications

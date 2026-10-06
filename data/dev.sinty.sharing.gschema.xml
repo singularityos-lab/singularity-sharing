@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="singularity-sharing">
+  <schema id="dev.sinty.sharing" path="/dev/sinty/sharing/">
+    <key name="file-sharing-enabled" type="b">
+      <default>false</default>
+      <summary>Share the chosen folders on the network</summary>
+    </key>
+    <key name="shared-folders" type="as">
+      <default>[]</default>
+      <summary>Folders shared on the network</summary>
+    </key>
+    <key name="file-sharing-read-only" type="b">
+      <default>true</default>
+      <summary>Other computers can only read the shared folders</summary>
+    </key>
+    <key name="file-sharing-protocol" type="s">
+      <choices>
+        <choice value="webdav"/>
+        <choice value="samba"/>
+      </choices>
+      <default>'webdav'</default>
+      <summary>How folders are shared when both ways are available</summary>
+    </key>
+    <key name="file-sharing-port" type="u">
+      <range min="1" max="65535"/>
+      <default>8443</default>
+      <summary>Port of the WebDAV file server</summary>
+    </key>
+    <key name="media-sharing-enabled" type="b">
+      <default>false</default>
+      <summary>Share music, photos and videos with media players on the network</summary>
+    </key>
+    <key name="media-folders" type="as">
+      <default>[]</default>
+      <summary>Folders shared with media players; empty means Music, Pictures and Videos</summary>
+    </key>
+    <key name="remote-desktop-enabled" type="b">
+      <default>false</default>
+      <summary>Let other computers connect to this screen</summary>
+    </key>
+    <key name="remote-desktop-port" type="u">
+      <range min="1" max="65535"/>
+      <default>5900</default>
+      <summary>Port of the Remote Desktop server</summary>
+    </key>
+    <key name="remote-desktop-view-only" type="b">
+      <default>false</default>
+      <summary>Remote people can only watch unless control is allowed</summary>
+    </key>
+    <key name="remote-desktop-screen" type="s">
+      <default>'all'</default>
+      <summary>Screen shown to Remote Desktop connections: all, or the connector name of one screen</summary>
+    </key>
+    <key name="remote-desktop-unattended" type="b">
+      <default>false</default>
+      <summary>Connections with the password do not need confirmation</summary>
+    </key>
+  </schema>
+</schemalist>
