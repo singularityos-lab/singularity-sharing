@@ -170,6 +170,58 @@ void test_services () {
     assert (Identity.fingerprint_of ({ 1, 2, 3 }).length == 95);
 }
 
+uint dav_put (Soup.Session session, uint port, string path, uint8[] data, bool with_password) {
+    var loop = new MainLoop ();
+    var msg = new Soup.Message ("PUT", "https://127.0.0.1:%u%s".printf (port, path));
+    if (with_password) msg.request_headers.replace ("Authorization", "Basic " + Base64.encode ((Environment.get_user_name () + ":pw").data));
+    msg.set_request_body_from_bytes ("application/octet-stream", new Bytes (data));
+    msg.accept_certificate.connect (() => true);
+    session.send_and_read_async.begin (msg, Priority.DEFAULT, null, (obj, res) => {
+        try {
+            session.send_and_read_async.end (res);
+        } catch (Error e) {
+        }
+        loop.quit ();
+    });
+    loop.run ();
+    return msg.status_code;
+}
+
+void test_dav_upload () {
+    try {
+        string root = DirUtils.make_tmp ("dav-XXXXXX");
+        DirUtils.create (Path.build_filename (root, "box"), 0700);
+        var dav = new WebDavServer (new Identity ().certificate, { Path.build_filename (root, "box") });
+        dav.read_only = false;
+        dav.set_password ("pw");
+        dav.listen (0, "127.0.0.1");
+        var session = new Soup.Session ();
+        var data = new uint8[3 * 1024 * 1024 + 17];
+        for (int i = 0; i < data.length; i++) data[i] = (uint8) (i * 31 + 7);
+        uint status = dav_put (session, dav.port, "/box/big.bin", data, true);
+        assert (status == 201);
+        uint8[] back;
+        FileUtils.get_data (Path.build_filename (root, "box", "big.bin"), out back);
+        assert (back.length == data.length && Memory.cmp (back, data, data.length) == 0);
+        assert (dav_put (session, dav.port, "/box/big.bin", data[0:100], true) == 204);
+        FileUtils.get_data (Path.build_filename (root, "box", "big.bin"), out back);
+        assert (back.length == 100);
+        assert (dav_put (session, dav.port, "/box/stolen.bin", data[0:100], false) == 401);
+        assert (!FileUtils.test (Path.build_filename (root, "box", "stolen.bin"), FileTest.EXISTS));
+        var dir = Dir.open (Path.build_filename (root, "box"));
+        string? name;
+        int count = 0;
+        while ((name = dir.read_name ()) != null) count++;
+        assert (count == 1);
+        dav.stop ();
+        FileUtils.remove (Path.build_filename (root, "box", "big.bin"));
+        DirUtils.remove (Path.build_filename (root, "box"));
+        DirUtils.remove (root);
+    } catch (Error e) {
+        error ("%s", e.message);
+    }
+}
+
 int main (string[] args) {
     Test.init (ref args);
     Test.add_func ("/sharing/dirty-tiles", test_dirty_tiles);
@@ -179,5 +231,6 @@ int main (string[] args) {
     Test.add_func ("/sharing/consent", test_consent);
     Test.add_func ("/sharing/services", test_services);
     Test.add_func ("/sharing/clipboard", test_clipboard);
+    Test.add_func ("/sharing/dav-upload", test_dav_upload);
     return Test.run ();
 }

@@ -75,8 +75,17 @@ namespace Singularity.Sharing {
         public bool read_only { get; set; default = true; }
         public uint port { get; private set; default = 0; }
 
+        private class Upload {
+            public string target;
+            public File part;
+            public OutputStream stream;
+            public bool failed;
+        }
+
         private Soup.Server server;
+        private Soup.AuthDomainBasic auth;
         private DavPaths paths;
+        private HashTable<Soup.ServerMessage, Upload> uploads = new HashTable<Soup.ServerMessage, Upload> (direct_hash, direct_equal);
         private string password = "";
         private string user;
 
@@ -85,7 +94,7 @@ namespace Singularity.Sharing {
             user = Environment.get_user_name ();
             server = (Soup.Server) Object.new (typeof (Soup.Server), "tls-certificate", certificate,
                 "server-header", "Singularity");
-            var auth = (Soup.AuthDomainBasic) Object.new (typeof (Soup.AuthDomainBasic),
+            auth = (Soup.AuthDomainBasic) Object.new (typeof (Soup.AuthDomainBasic),
                 "realm", "Singularity File Sharing");
             auth.set_auth_callback ((domain, msg, username, pass) => {
                 return password != "" && username == user && Secrets.equal (pass, password);
@@ -93,6 +102,55 @@ namespace Singularity.Sharing {
             auth.add_path ("/");
             server.add_auth_domain (auth);
             server.add_handler (null, handle);
+            server.request_started.connect ((msg) => {
+                msg.got_headers.connect (() => begin_upload (msg));
+                msg.finished.connect (() => end_upload (msg));
+            });
+        }
+
+        private void begin_upload (Soup.ServerMessage msg) {
+            if (msg.get_method () != "PUT" || read_only) return;
+            string? header = msg.get_request_headers ().get_one ("Authorization");
+            if (header == null || auth.accepts (msg, header) == null) return;
+            string decoded = decode (msg.get_uri ().get_path ());
+            DavShare? share;
+            string? local = paths.resolve (decoded, out share, false);
+            if (local == null || DavPaths.split (decoded).length < 2) return;
+            if (!FileUtils.test (Path.get_dirname (local), FileTest.IS_DIR) || FileUtils.test (local, FileTest.IS_DIR)) return;
+            var upload = new Upload ();
+            upload.target = local;
+            upload.part = File.new_for_path (Path.build_filename (Path.get_dirname (local),
+                ".%s.%s.part".printf (Path.get_basename (local), Uuid.string_random ().substring (0, 8))));
+            try {
+                upload.stream = upload.part.create (FileCreateFlags.PRIVATE);
+            } catch (Error e) {
+                return;
+            }
+            uploads[msg] = upload;
+            msg.get_request_body ().set_accumulate (false);
+            msg.got_chunk.connect ((chunk) => {
+                if (upload.failed) return;
+                try {
+                    size_t written;
+                    upload.stream.write_all (chunk.get_data (), out written);
+                } catch (Error e) {
+                    upload.failed = true;
+                }
+            });
+        }
+
+        private void end_upload (Soup.ServerMessage msg) {
+            var upload = uploads[msg];
+            if (upload == null) return;
+            uploads.remove (msg);
+            try {
+                upload.stream.close ();
+            } catch (Error e) {
+            }
+            try {
+                upload.part.delete ();
+            } catch (Error e) {
+            }
         }
 
         public void set_password (string password) {
@@ -337,6 +395,19 @@ namespace Singularity.Sharing {
                 return;
             }
             bool existed = FileUtils.test (local, FileTest.EXISTS);
+            var upload = uploads[msg];
+            if (upload != null) {
+                uploads.remove (msg);
+                upload.stream.close ();
+                if (upload.failed || upload.target != local) {
+                    upload.part.delete ();
+                    msg.set_status (Soup.Status.INTERNAL_SERVER_ERROR, null);
+                    return;
+                }
+                upload.part.move (File.new_for_path (local), FileCopyFlags.OVERWRITE);
+                msg.set_status (existed ? Soup.Status.NO_CONTENT : Soup.Status.CREATED, null);
+                return;
+            }
             var body = msg.get_request_body ().flatten ();
             File.new_for_path (local).replace_contents (body.get_data () ?? new uint8[0], null, false,
                 FileCreateFlags.NONE, null);
